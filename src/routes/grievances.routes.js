@@ -225,7 +225,16 @@ router.post('/', authenticateToken, async (req, res) => {
       });
     }
 
-    const validationErrors = validateDetails(category.name, details);
+    let finalDetails = details || {};
+    if (typeof finalDetails === 'string') {
+      try {
+        finalDetails = JSON.parse(finalDetails);
+      } catch (e) {
+        finalDetails = {};
+      }
+    }
+
+    const validationErrors = validateDetails(category.name, finalDetails);
     if (validationErrors.length > 0) {
       return res.status(400).json({ success: false, message: validationErrors.join(' ') });
     }
@@ -249,7 +258,7 @@ router.post('/', authenticateToken, async (req, res) => {
       branch: branch || submitter?.branch || 'AIML',
       section: section || submitter?.section || 'A',
       description: description.trim(),
-      details: details || {},
+      details: finalDetails,
       attachment_url: attachment_url || null,
       status: 'pending',
       status_logs: [initialLog],
