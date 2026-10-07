@@ -25,15 +25,16 @@ export async function connectDB() {
     throw new Error('MONGODB_URI environment variable is not defined. Please configure it in your backend/.env file.');
   }
 
-  if (cached.conn) {
+  if (mongoose.connection.readyState === 1) {
+    cached.conn = mongoose;
     return cached.conn;
   }
 
   if (!cached.promise) {
     const opts = {
-      bufferCommands: false,
+      bufferCommands: true,
       maxPoolSize: 10,
-      serverSelectionTimeoutMS: 8000,
+      serverSelectionTimeoutMS: 10000,
     };
 
     cached.promise = mongoose.connect(MONGODB_URI, opts).then(async (mongooseInstance) => {
@@ -44,6 +45,10 @@ export async function connectDB() {
         console.warn('⚠️ Seeding check skipped/failed:', seedErr.message);
       }
       return mongooseInstance;
+    }).catch((err) => {
+      cached.promise = null;
+      cached.conn = null;
+      throw err;
     });
   }
 
@@ -51,6 +56,7 @@ export async function connectDB() {
     cached.conn = await cached.promise;
   } catch (e) {
     cached.promise = null;
+    cached.conn = null;
     throw e;
   }
 
@@ -62,11 +68,11 @@ export async function seedDefaultData() {
   const { Category } = await import('../models/Category.js');
   const { Grievance } = await import('../models/Grievance.js');
 
-  // 1. Seed Categories if empty
+  // 1. Remove Faculty category and Seed Categories if empty
+  await Category.deleteMany({ name: 'Faculty' });
   const categoryCount = await Category.countDocuments();
   if (categoryCount === 0) {
     const defaultCategories = [
-      { name: 'Faculty', allowed_role: 'cr' },
       { name: 'Classroom', allowed_role: 'both' },
       { name: 'Labs', allowed_role: 'cr' },
       { name: 'Cabin Issue', allowed_role: 'teacher' }
@@ -157,6 +163,28 @@ export async function seedDefaultData() {
       branch: 'AIML',
       year: 3,
       section: 'A',
+      is_active: true,
+    },
+    {
+      name: 'Er. Amit Verma (Campus Infrastructure Head)',
+      email: 'infra@aiml.edu',
+      password_hash: bcrypt.hashSync('Infra@123', salt),
+      role: 'infra_head',
+      department: 'AIML',
+      branch: 'AIML',
+      year: null,
+      section: null,
+      is_active: true,
+    },
+    {
+      name: 'Er. Rajesh Sharma (IT & Systems Infrastructure Head)',
+      email: 'it_infra@aiml.edu',
+      password_hash: bcrypt.hashSync('ItInfra@123', salt),
+      role: 'it_infra_head',
+      department: 'AIML',
+      branch: 'AIML',
+      year: null,
+      section: null,
       is_active: true,
     }
   ];

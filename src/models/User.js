@@ -20,7 +20,7 @@ const UserSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['cr', 'teacher', 'admin'],
+      enum: ['cr', 'teacher', 'admin', 'infra_head', 'it_infra_head'],
       required: true,
     },
     department: {
@@ -57,6 +57,10 @@ const UserSchema = new mongoose.Schema(
       trim: true,
     },
     gender: {
+      type: String,
+      default: null,
+    },
+    avatar_url: {
       type: String,
       default: null,
     },

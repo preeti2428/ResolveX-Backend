@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import mongoose from 'mongoose';
 import { connectDB } from './config/db.js';
 
 import authRoutes from './routes/auth.routes.js';
@@ -33,6 +34,26 @@ if (process.env.NODE_ENV !== 'production') {
     next();
   });
 }
+
+// Auto-connect / ensure database connection for incoming API requests
+app.use(async (req, res, next) => {
+  if (req.path === '/api/health' || req.path === '/') {
+    return next();
+  }
+  if (mongoose.connection.readyState !== 1) {
+    try {
+      await connectDB();
+    } catch (dbErr) {
+      console.error('Database connection error on request:', dbErr.message);
+      return res.status(503).json({
+        success: false,
+        message: 'Database is currently reconnecting. Please retry in a few moments.',
+        detail: dbErr.message,
+      });
+    }
+  }
+  next();
+});
 
 // API Routes
 app.use('/api/auth', authRoutes);

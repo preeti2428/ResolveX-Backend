@@ -22,7 +22,25 @@ function validateDetails(categoryName, details) {
     if (!details.block || !details.block.trim()) {
       details.block = 'H Block';
     }
-    if (!details.floor || !details.floor.trim()) errors.push('Floor is required.');
+    if (!details.floor || !details.floor.trim()) {
+      const match = details.room_no ? details.room_no.match(/\d+/) : null;
+      if (match) {
+        const floorMap = {
+          '0': 'Ground Floor',
+          '1': '1st Floor',
+          '2': '2nd Floor',
+          '3': '3rd Floor',
+          '4': '4th Floor',
+          '5': '5th Floor',
+          '6': '6th Floor',
+          '7': '7th Floor',
+          '8': '8th Floor',
+        };
+        details.floor = floorMap[match[0][0]] || 'Ground Floor';
+      } else {
+        errors.push('Floor is required.');
+      }
+    }
     if (!details.issue_type || !details.issue_type.trim()) errors.push('Issue type is required.');
   } else if (categoryName === 'Labs') {
     if (!details.lab_name || !details.lab_name.trim()) errors.push('Lab name is required.');
@@ -39,11 +57,17 @@ function validateDetails(categoryName, details) {
   return errors;
 }
 
-// GET /api/grievances/all (Admin only)
-router.get('/all', authenticateToken, requireRole(['admin']), async (req, res) => {
+// GET /api/grievances/all (Admin, Infra Head, IT Infra Head)
+router.get('/all', authenticateToken, requireRole(['admin', 'infra_head', 'it_infra_head']), async (req, res) => {
   try {
     const { status, category_id, role, search, year, branch } = req.query;
     const filter = {};
+
+    if (req.user.role === 'infra_head') {
+      filter.assigned_department = 'infra';
+    } else if (req.user.role === 'it_infra_head') {
+      filter.assigned_department = 'it_infra';
+    }
 
     if (status && status !== 'all') {
       filter.status = status;
@@ -87,6 +111,8 @@ router.get('/all', authenticateToken, requireRole(['admin']), async (req, res) =
       description: g.description,
       details: g.details,
       attachment_url: g.attachment_url,
+      resolution_photo_url: g.resolution_photo_url || null,
+      assigned_department: g.assigned_department || null,
       status: g.status,
       admin_notes: g.admin_notes,
       year: g.year || g.submitted_by?.year || 1,
@@ -132,6 +158,7 @@ router.get('/my', authenticateToken, async (req, res) => {
       attachment_url: g.attachment_url,
       status: g.status,
       admin_notes: g.admin_notes,
+      resolution_photo_url: g.resolution_photo_url || null,
       year: g.year || g.submitted_by?.year || 1,
       branch: g.branch || g.submitted_by?.branch || 'AIML',
       section: g.section || g.submitted_by?.section || 'A',
@@ -160,7 +187,14 @@ router.get('/my', authenticateToken, async (req, res) => {
 // GET /api/grievances (Default list)
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const filter = req.user.role === 'admin' ? {} : { submitted_by: req.user.id };
+    let filter = { submitted_by: req.user.id };
+    if (req.user.role === 'admin') {
+      filter = {};
+    } else if (req.user.role === 'infra_head') {
+      filter = { assigned_department: 'infra' };
+    } else if (req.user.role === 'it_infra_head') {
+      filter = { assigned_department: 'it_infra' };
+    }
     const grievances = await Grievance.find(filter)
       .populate('category_id', 'name allowed_role')
       .populate('submitted_by', 'name email role section department branch year')
@@ -175,6 +209,7 @@ router.get('/', authenticateToken, async (req, res) => {
       attachment_url: g.attachment_url,
       status: g.status,
       admin_notes: g.admin_notes,
+      resolution_photo_url: g.resolution_photo_url,
       year: g.year || g.submitted_by?.year || 1,
       branch: g.branch || g.submitted_by?.branch || 'AIML',
       section: g.section || g.submitted_by?.section || 'A',
@@ -209,8 +244,8 @@ router.post('/', authenticateToken, async (req, res) => {
 
     const { category_id, description, details, attachment_url, year, branch, section } = req.body;
 
-    if (!category_id || !description || !description.trim()) {
-      return res.status(400).json({ success: false, message: 'Category and description are required.' });
+    if (!category_id) {
+      return res.status(400).json({ success: false, message: 'Category is required.' });
     }
 
     const category = await Category.findById(category_id);
@@ -257,7 +292,7 @@ router.post('/', authenticateToken, async (req, res) => {
       year: year || submitter?.year || 1,
       branch: branch || submitter?.branch || 'AIML',
       section: section || submitter?.section || 'A',
-      description: description.trim(),
+      description: (description && typeof description === 'string') ? description.trim() : '',
       details: finalDetails,
       attachment_url: attachment_url || null,
       status: 'pending',
@@ -307,8 +342,10 @@ router.get('/:id', authenticateToken, async (req, res) => {
 
     const isSubmitter = grievance.submitted_by && grievance.submitted_by._id.toString() === req.user.id;
     const isAdmin = req.user.role === 'admin';
+    const isAssigned = (req.user.role === 'infra_head' && grievance.assigned_department === 'infra') || 
+                       (req.user.role === 'it_infra_head' && grievance.assigned_department === 'it_infra');
 
-    if (!isSubmitter && !isAdmin) {
+    if (!isSubmitter && !isAdmin && !isAssigned) {
       return res.status(403).json({ success: false, message: 'Access denied.' });
     }
 
@@ -322,6 +359,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
         attachment_url: grievance.attachment_url,
         status: grievance.status,
         admin_notes: grievance.admin_notes,
+        resolution_photo_url: grievance.resolution_photo_url,
         year: grievance.year,
         branch: grievance.branch,
         section: grievance.section,
@@ -344,9 +382,9 @@ router.get('/:id', authenticateToken, async (req, res) => {
 });
 
 // PATCH /api/grievances/:id/status (Admin status update)
-router.patch('/:id/status', authenticateToken, requireRole(['admin']), async (req, res) => {
+router.patch('/:id/status', authenticateToken, requireRole(['admin', 'infra_head', 'it_infra_head']), async (req, res) => {
   try {
-    const { status, admin_notes } = req.body;
+    const { status, admin_notes, resolution_photo_url } = req.body;
     const validStatuses = ['pending', 'in_progress', 'resolved', 'rejected'];
 
     if (!validStatuses.includes(status)) {
@@ -364,6 +402,10 @@ router.patch('/:id/status', authenticateToken, requireRole(['admin']), async (re
     grievance.status = status;
     if (admin_notes !== undefined) {
       grievance.admin_notes = admin_notes;
+    }
+
+    if (resolution_photo_url !== undefined) {
+      grievance.resolution_photo_url = resolution_photo_url;
     }
 
     if (isResolvedOrRejected) {
@@ -411,6 +453,7 @@ router.patch('/:id/status', authenticateToken, requireRole(['admin']), async (re
         _id: grievance._id.toString(),
         status: grievance.status,
         admin_notes: grievance.admin_notes,
+        resolution_photo_url: grievance.resolution_photo_url,
         resolved_at: grievance.resolved_at,
         status_logs: grievance.status_logs,
       }
@@ -418,6 +461,37 @@ router.patch('/:id/status', authenticateToken, requireRole(['admin']), async (re
   } catch (error) {
     console.error('Update status error:', error);
     return res.status(500).json({ success: false, message: 'Failed to update status.', detail: error.message });
+  }
+});
+
+// PATCH /api/grievances/:id/assign (Admin assigns to infra)
+router.patch('/:id/assign', authenticateToken, requireRole(['admin']), async (req, res) => {
+  try {
+    const { assigned_department } = req.body;
+    if (assigned_department !== 'infra' && assigned_department !== 'it_infra' && assigned_department !== null) {
+      return res.status(400).json({ success: false, message: 'Invalid department.' });
+    }
+
+    const grievance = await Grievance.findById(req.params.id);
+    if (!grievance) {
+      return res.status(404).json({ success: false, message: 'Grievance not found.' });
+    }
+
+    grievance.assigned_department = assigned_department;
+    grievance.status_logs.push({
+      old_status: grievance.status,
+      new_status: grievance.status,
+      changed_by: req.user.id,
+      changed_by_name: req.user.name,
+      changed_by_role: req.user.role,
+      note: `Grievance forwarded to ${assigned_department ? assigned_department.replace('_', ' ').toUpperCase() : 'General Admin'}`,
+      changed_at: new Date(),
+    });
+
+    await grievance.save();
+    return res.json({ success: true, message: 'Grievance assigned.', grievance });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to assign grievance.' });
   }
 });
 
@@ -485,6 +559,80 @@ router.post('/:id/comments', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Add comment error:', error);
     return res.status(500).json({ success: false, message: 'Failed to post comment.' });
+  }
+});
+
+// PUT /api/grievances/:id (Update grievance while pending)
+router.put('/:id', authenticateToken, async (req, res) => {
+  try {
+    const { description } = req.body;
+    const grievance = await Grievance.findById(req.params.id);
+    if (!grievance) {
+      return res.status(404).json({ success: false, message: 'Grievance not found.' });
+    }
+
+    const isSubmitter = grievance.submitted_by.toString() === req.user.id;
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isSubmitter && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'You are not authorized to edit this grievance.' });
+    }
+
+    if (!isAdmin && grievance.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'Only pending grievances can be edited.'
+      });
+    }
+
+    grievance.description = (description && typeof description === 'string') ? description.trim() : '';
+    await grievance.save();
+
+    return res.json({
+      success: true,
+      message: 'Grievance updated successfully.',
+      grievance: {
+        id: grievance._id.toString(),
+        description: grievance.description,
+      }
+    });
+  } catch (error) {
+    console.error('Update grievance error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to update grievance.', detail: error.message });
+  }
+});
+
+// DELETE /api/grievances/:id (Delete grievance while pending)
+router.delete('/:id', authenticateToken, async (req, res) => {
+  try {
+    const grievance = await Grievance.findById(req.params.id);
+    if (!grievance) {
+      return res.status(404).json({ success: false, message: 'Grievance not found.' });
+    }
+
+    const isSubmitter = grievance.submitted_by.toString() === req.user.id;
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isSubmitter && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'You are not authorized to delete this grievance.' });
+    }
+
+    if (!isAdmin && grievance.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'Grievance can only be deleted while it is in pending status.'
+      });
+    }
+
+    await Grievance.findByIdAndDelete(req.params.id);
+
+    return res.json({
+      success: true,
+      message: 'Grievance deleted successfully.',
+    });
+  } catch (error) {
+    console.error('Delete grievance error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to delete grievance.', detail: error.message });
   }
 });
 

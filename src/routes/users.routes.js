@@ -26,6 +26,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
         section: user.section || null,
         mobile: user.mobile || '',
         phone: user.mobile || '',
+        avatar_url: user.avatar_url || null,
         created_at: user.created_at,
       },
     });
@@ -38,7 +39,7 @@ router.get('/profile', authenticateToken, async (req, res) => {
 // PATCH /api/users/profile
 router.patch('/profile', authenticateToken, async (req, res) => {
   try {
-    const { name, phone, mobile, currentPassword, newPassword } = req.body;
+    const { name, phone, mobile, currentPassword, newPassword, avatar_url } = req.body;
     const user = await User.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found.' });
@@ -62,6 +63,7 @@ router.patch('/profile', authenticateToken, async (req, res) => {
     if (name && name.trim()) user.name = name.trim();
     if (phone !== undefined) user.mobile = phone.trim();
     if (mobile !== undefined) user.mobile = mobile.trim();
+    if (avatar_url !== undefined) user.avatar_url = avatar_url;
 
     await user.save();
 
@@ -78,6 +80,7 @@ router.patch('/profile', authenticateToken, async (req, res) => {
         year: user.year || null,
         section: user.section || null,
         phone: user.mobile || '',
+        avatar_url: user.avatar_url || null,
       },
     });
   } catch (error) {

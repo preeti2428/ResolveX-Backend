@@ -6,9 +6,10 @@ const router = express.Router();
 
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    let query = {};
+    let query = { name: { $ne: 'Faculty' } };
     if (req.user.role !== 'admin') {
       query = {
+        name: { $ne: 'Faculty' },
         $or: [{ allowed_role: req.user.role }, { allowed_role: 'both' }]
       };
     }

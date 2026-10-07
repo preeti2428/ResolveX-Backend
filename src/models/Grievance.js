@@ -86,7 +86,8 @@ const GrievanceSchema = new mongoose.Schema(
     },
     description: {
       type: String,
-      required: true,
+      required: false,
+      default: '',
       trim: true,
     },
     details: {
@@ -95,6 +96,15 @@ const GrievanceSchema = new mongoose.Schema(
     },
     attachment_url: {
       type: String,
+      default: null,
+    },
+    resolution_photo_url: {
+      type: String,
+      default: null,
+    },
+    assigned_department: {
+      type: String,
+      enum: ['infra', 'it_infra', null],
       default: null,
     },
     status: {
