@@ -57,8 +57,8 @@ function validateDetails(categoryName, details) {
   return errors;
 }
 
-// GET /api/grievances/all (Admin, Infra Head, IT Infra Head)
-router.get('/all', authenticateToken, requireRole(['admin', 'infra_head', 'it_infra_head']), async (req, res) => {
+// GET /api/grievances/all (Admin, Infra Head, IT Infra Head, AC Incharge)
+router.get('/all', authenticateToken, requireRole(['admin', 'infra_head', 'it_infra_head', 'ac_incharge']), async (req, res) => {
   try {
     const { status, category_id, role, search, year, branch } = req.query;
     const filter = {};
@@ -67,6 +67,8 @@ router.get('/all', authenticateToken, requireRole(['admin', 'infra_head', 'it_in
       filter.assigned_department = 'infra';
     } else if (req.user.role === 'it_infra_head') {
       filter.assigned_department = 'it_infra';
+    } else if (req.user.role === 'ac_incharge') {
+      filter.assigned_department = { $in: ['ac_incharge', 'ac'] };
     }
 
     if (status && status !== 'all') {
@@ -194,6 +196,8 @@ router.get('/', authenticateToken, async (req, res) => {
       filter = { assigned_department: 'infra' };
     } else if (req.user.role === 'it_infra_head') {
       filter = { assigned_department: 'it_infra' };
+    } else if (req.user.role === 'ac_incharge') {
+      filter = { assigned_department: { $in: ['ac_incharge', 'ac'] } };
     }
     const grievances = await Grievance.find(filter)
       .populate('category_id', 'name allowed_role')
@@ -343,7 +347,8 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const isSubmitter = grievance.submitted_by && grievance.submitted_by._id.toString() === req.user.id;
     const isAdmin = req.user.role === 'admin';
     const isAssigned = (req.user.role === 'infra_head' && grievance.assigned_department === 'infra') || 
-                       (req.user.role === 'it_infra_head' && grievance.assigned_department === 'it_infra');
+                       (req.user.role === 'it_infra_head' && grievance.assigned_department === 'it_infra') ||
+                       (req.user.role === 'ac_incharge' && (grievance.assigned_department === 'ac_incharge' || grievance.assigned_department === 'ac'));
 
     if (!isSubmitter && !isAdmin && !isAssigned) {
       return res.status(403).json({ success: false, message: 'Access denied.' });
@@ -382,7 +387,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
 });
 
 // PATCH /api/grievances/:id/status (Admin status update)
-router.patch('/:id/status', authenticateToken, requireRole(['admin', 'infra_head', 'it_infra_head']), async (req, res) => {
+router.patch('/:id/status', authenticateToken, requireRole(['admin', 'infra_head', 'it_infra_head', 'ac_incharge']), async (req, res) => {
   try {
     const { status, admin_notes, resolution_photo_url } = req.body;
     const validStatuses = ['pending', 'in_progress', 'resolved', 'rejected'];
@@ -464,11 +469,12 @@ router.patch('/:id/status', authenticateToken, requireRole(['admin', 'infra_head
   }
 });
 
-// PATCH /api/grievances/:id/assign (Admin assigns to infra)
+// PATCH /api/grievances/:id/assign (Admin assigns to infra / IT / AC)
 router.patch('/:id/assign', authenticateToken, requireRole(['admin']), async (req, res) => {
   try {
     const { assigned_department } = req.body;
-    if (assigned_department !== 'infra' && assigned_department !== 'it_infra' && assigned_department !== null) {
+    const validDepts = ['infra', 'it_infra', 'ac_incharge', 'ac', null];
+    if (!validDepts.includes(assigned_department)) {
       return res.status(400).json({ success: false, message: 'Invalid department.' });
     }
 
@@ -478,13 +484,19 @@ router.patch('/:id/assign', authenticateToken, requireRole(['admin']), async (re
     }
 
     grievance.assigned_department = assigned_department;
+    const deptDisplayNames = {
+      infra: 'Infra Incharge',
+      it_infra: 'IT Infra Incharge',
+      ac_incharge: 'AC Incharge',
+      ac: 'AC Incharge',
+    };
     grievance.status_logs.push({
       old_status: grievance.status,
       new_status: grievance.status,
       changed_by: req.user.id,
       changed_by_name: req.user.name,
       changed_by_role: req.user.role,
-      note: `Grievance forwarded to ${assigned_department ? assigned_department.replace('_', ' ').toUpperCase() : 'General Admin'}`,
+      note: `Grievance forwarded to ${assigned_department ? (deptDisplayNames[assigned_department] || assigned_department.toUpperCase()) : 'General Admin'}`,
       changed_at: new Date(),
     });
 

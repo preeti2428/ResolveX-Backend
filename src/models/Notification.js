@@ -20,7 +20,7 @@ const NotificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ['status_change', 'new_grievance', 'announcement', 'system'],
+      enum: ['status_change', 'grievance_status', 'new_grievance', 'announcement', 'system'],
       default: 'system',
     },
     link_id: {

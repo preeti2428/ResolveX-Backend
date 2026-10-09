@@ -104,7 +104,7 @@ const GrievanceSchema = new mongoose.Schema(
     },
     assigned_department: {
       type: String,
-      enum: ['infra', 'it_infra', null],
+      enum: ['infra', 'it_infra', 'ac_incharge', 'ac', null],
       default: null,
     },
     status: {

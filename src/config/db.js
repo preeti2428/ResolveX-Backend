@@ -186,6 +186,17 @@ export async function seedDefaultData() {
       year: null,
       section: null,
       is_active: true,
+    },
+    {
+      name: 'Er. Manoj Kumar (AC Incharge)',
+      email: 'ac_incharge@aiml.edu',
+      password_hash: bcrypt.hashSync('AcIncharge@123', salt),
+      role: 'ac_incharge',
+      department: 'AIML',
+      branch: 'AIML',
+      year: null,
+      section: null,
+      is_active: true,
     }
   ];
 
